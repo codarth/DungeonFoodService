@@ -69,8 +69,14 @@ public:
 		FIntVector Extents;
 	UPROPERTY(VisibleAnywhere, Category = TempViewing) // Needed for garbage collection, other wise tile won't despawn
 		TArray<FIntVector> FloorTiles;
+	UPROPERTY(VisibleAnywhere, Category = TempViewing) // Needed for garbage collection, other wise tile won't despawn
+		TArray<FIntVector> CorridorTiles;
 	UPROPERTY(VisibleAnywhere, Category = TempViewing)
-		TMap< FIntVector, FIntVector> Rooms; // Location, extents
+		TMap<FIntVector, FIntVector> Rooms; // Location, extents
+
+	// Reset and clean variables 
+	UFUNCTION()
+	void ResetAndClear();
 
 	// Create Map with given parameters
 	UFUNCTION(BlueprintCallable, Category = DungeonGenerator)
@@ -94,5 +100,12 @@ private:
 	// Get a room to branch to
 	UFUNCTION()
 		void GetBranchRoom(TArray<FIntVector>& RoomKeys, int32& LastBranch);
+	// Create corridors between rooms
+	UFUNCTION()
+		void MapCorridors(const FIntVector RoomA, const FIntVector RoomB);
+	UFUNCTION()
+		void MakeYCorridor(const FIntVector From, const FIntVector To);
+	UFUNCTION()
+		void MakeXCorridor(const FIntVector From, const FIntVector To);
 };
  

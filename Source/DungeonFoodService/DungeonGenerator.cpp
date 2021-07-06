@@ -5,6 +5,8 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 
+#include "DrawDebugHelpers.h"
+
 // Sets default values
 ADungeonGenerator::ADungeonGenerator()
 {
@@ -12,6 +14,7 @@ ADungeonGenerator::ADungeonGenerator()
 	PrimaryActorTick.bCanEverTick = true;
 
 	MyRootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
+	MyRootComponent->SetMobility(EComponentMobility::Static);
 	SetRootComponent(MyRootComponent);
 
 	FloorMesh = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FloorMesh"));
@@ -21,11 +24,11 @@ ADungeonGenerator::ADungeonGenerator()
 	WallMesh = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WallMesh"));
 	WallMesh->SetMobility(EComponentMobility::Static);
 	WallMesh->SetupAttachment(RootComponent);
-	
+
 	InnerCornerMesh = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("InnerCornerMesh"));
 	InnerCornerMesh->SetMobility(EComponentMobility::Static);
 	InnerCornerMesh->SetupAttachment(RootComponent);
-	
+
 	OuterCornerMesh = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("OuterCornerMesh"));
 	OuterCornerMesh->SetMobility(EComponentMobility::Static);
 	OuterCornerMesh->SetupAttachment(RootComponent);
@@ -33,6 +36,7 @@ ADungeonGenerator::ADungeonGenerator()
 
 void ADungeonGenerator::OnConstruction(const FTransform& Transform)
 {
+	FlushPersistentDebugLines(GetWorld());
 	// When NewSeed is ticked in the editor, set back to false and calculate a new seed
 	if (NewSeed)
 	{
@@ -48,15 +52,27 @@ void ADungeonGenerator::OnConstruction(const FTransform& Transform)
 	WallMesh->ClearInstances();
 	InnerCornerMesh->ClearInstances();
 	OuterCornerMesh->ClearInstances();
+
+	PrevLocation = FIntVector::ZeroValue;
+	NextLocation = FIntVector::ZeroValue;
+	Extents = FIntVector::ZeroValue;
+
+	FloorTiles.Empty();
+	CorridorTiles.Empty();
+	Rooms.Empty();
+
 	GenerateMap();
+}
+
+// Reset and clear data
+void ADungeonGenerator::ResetAndClear()
+{
+
 }
 
 // Generate tile locations and spawn tiles at locations
 void ADungeonGenerator::GenerateMap()
 {
-	NextLocation = FIntVector::ZeroValue;
-	PrevLocation = FIntVector::ZeroValue;
-
 	bool IsValidToPlace;
 	FIntVector NewLocation;
 	TArray<FIntVector> NewFloorTiles;
@@ -84,6 +100,10 @@ void ADungeonGenerator::GenerateMap()
 					GetBranchRoom(RoomKeys, LastBranch);
 					NextRoom(IsValidToPlace, NewLocation, NewFloorTiles, RoomKeys, LastBranch);
 				}
+				else
+				{
+					NextRoom(IsValidToPlace, NewLocation, NewFloorTiles, RoomKeys, LastBranch);
+				}
 			}
 			else // Calculate next room and check validity
 			{
@@ -96,6 +116,8 @@ void ADungeonGenerator::GenerateMap()
 
 void ADungeonGenerator::NextRoom(bool& IsValidToPlace, FIntVector& NewLocation, TArray<FIntVector>& NewFloorTiles, TArray<FIntVector>& RoomKeys, int32& LastBranch)
 {
+	//UE_LOG(LogTemp, Warning, TEXT("BEFORE :: NewLoc: %s, Prev: %s, Next: %s"), *NewLocation.ToString(), *PrevLocation.ToString(), *NextLocation.ToString());
+
 	FindNextRoomLocation(IsValidToPlace, NewLocation);
 	NextLocation = NewLocation;
 	// Valid room, build tiles
@@ -104,6 +126,13 @@ void ADungeonGenerator::NextRoom(bool& IsValidToPlace, FIntVector& NewLocation, 
 		MakeFloorArea(NextLocation, NewFloorTiles, PrevLocation, Extents);
 		FloorTiles.Append(NewFloorTiles);
 		Rooms.Add(NewLocation, Extents);
+
+		//UE_LOG(LogTemp, Warning, TEXT("AFTER  :: NewLoc: %s"), *NewLocation.ToString());
+		//UE_LOG(LogTemp, Warning, TEXT("AFTER  :: Prev: %s"), *PrevLocation.ToString());
+		//UE_LOG(LogTemp, Warning, TEXT("AFTER  :: Next: %s"), *NextLocation.ToString());
+
+		MapCorridors(PrevLocation, NextLocation);
+
 		PrevLocation = NextLocation;
 	}
 	else // Not valid branch
@@ -236,13 +265,15 @@ void ADungeonGenerator::MakeFloorArea(const FIntVector InLocation, TArray<FIntVe
 	}
 
 	OutFloorTiles = ConnectedTiles;
-	OutLocation = InLocation;
-	OutExtents = FIntVector(ExtentsX.Max(), ExtentsY.Max(), InLocation.Z);
+	//OutLocation = InLocation; // TODO: remove out location
+	OutExtents = FIntVector(FMath::Max<int32>(ExtentsX), FMath::Max<int32>(ExtentsY), InLocation.Z);
 }
 
 // Spawn tiles at given locations
 void ADungeonGenerator::SpawnTiles()
 {
+	FloorTiles.Append(CorridorTiles);
+
 	for (FIntVector Tile : FloorTiles)
 	{
 		// Make floor tiles
@@ -376,7 +407,7 @@ void ADungeonGenerator::FindNextRoomLocation(bool& IsValid, FIntVector& NewLocat
 
 	while (Searching)
 	{
-		if (Directions.Last() >= 0)
+		if (Directions.Last() >= 0) // TODO:: just = ?
 		{
 			TestIndex = Stream.FRandRange(0, Directions.Last());
 			switch (TestIndex)
@@ -448,6 +479,369 @@ void ADungeonGenerator::TestRelativeTileLocation(const FIntVector InLocation, co
 	NewLocation = NewVector;
 	IsFloorTile = TestArray.Contains(NewVector);
 }
+
+void ADungeonGenerator::MapCorridors(const FIntVector RoomA, const FIntVector RoomB)
+{
+	FIntVector* RoomAExtent = Rooms.Find(RoomA);
+	FIntVector* RoomBExtent = Rooms.Find(RoomB);
+	FIntVector PointRoomA, PointRoomB, PointCorner;
+
+	int LoopCount = 0;
+
+	//DrawDebugBox(GetWorld(), (FVector)RoomA * Scale, FVector(50, 50, 50), FColor::Purple, true, -1.0f, 0U, 5);
+	//DrawDebugBox(GetWorld(), FVector(RoomAExtent->X, RoomAExtent->Y, RoomAExtent->Z) * Scale, FVector(50, 50, 50), FColor::Blue, true, -1.0f, 0U, 5);
+	//DrawDebugBox(GetWorld(), (FVector)RoomB * Scale, FVector(50, 50, 50), FColor::Yellow, true, -1.0f, 0U, 5);
+	//DrawDebugBox(GetWorld(), FVector(RoomBExtent->X, RoomBExtent->Y, RoomBExtent->Z) * Scale, FVector(50, 50, 50), FColor::Green, true, -1.0f, 0U, 5);
+
+	// Room parrallel on X with overlapping
+	if ((FMath::Max(RoomA.X, RoomB.X)) <= (FMath::Min(RoomAExtent->X, RoomBExtent->X)))
+	{
+		// Room B is to the right? Work in positive direction
+		if (RoomB.Y > RoomA.Y)
+		{
+			// Check that rooms are not merged
+			if (RoomB.Y - RoomAExtent->Y > 1)
+			{
+				while (LoopCount <= MaxLoops)
+				{
+					// Corridor from A to B on Y axis
+					int OutX = Stream.RandRange(FMath::Max(RoomA.X, RoomB.X), FMath::Min(RoomAExtent->X, RoomBExtent->X));
+					//UE_LOG(LogTemp, Warning, TEXT("Parrallel on X, not merged: outX: %d"), OutX);
+					PointRoomA = FIntVector(OutX, RoomAExtent->Y, RoomA.Z);
+					PointRoomB = FIntVector(OutX, RoomB.Y, RoomB.Z);
+					if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+					{
+						MakeYCorridor(PointRoomA, PointRoomB);
+						break;
+					}
+					else
+					{
+						LoopCount++;
+					}
+				}
+			}
+		}
+		else
+		{
+			// Check that rooms are not merged
+			if (RoomA.Y - RoomBExtent->Y > 1)
+			{
+				while (LoopCount <= MaxLoops)
+				{
+					// Corridor from B to A on Y axis
+					int OutX = Stream.RandRange(FMath::Max(RoomA.X, RoomB.X), FMath::Min(RoomAExtent->X, RoomBExtent->X));
+					PointRoomA = FIntVector(OutX, RoomA.Y, RoomA.Z);
+					PointRoomB = FIntVector(OutX, RoomBExtent->Y, RoomB.Z);
+					if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+					{
+						MakeYCorridor(PointRoomB, PointRoomA);
+						break;
+					}
+					else
+					{
+						LoopCount++;
+					}
+				}
+			}
+		}
+	}
+	// Room parrallel on Y with overlapping
+	else if ((FMath::Max(RoomA.Y, RoomB.Y)) <= (FMath::Min(RoomAExtent->Y, RoomBExtent->Y)))
+	{
+		// Room B is to the forward? Work in positive direction
+		if (RoomB.X > RoomA.X)
+		{
+			// Check that rooms are not merged
+			if (RoomB.X - RoomAExtent->X > 1)
+			{
+				while (LoopCount <= MaxLoops)
+				{
+					// Corridor from A to B on X axis
+					int OutY = Stream.RandRange(FMath::Max(RoomA.Y, RoomB.Y), FMath::Min(RoomAExtent->Y, RoomBExtent->Y));
+					PointRoomA = FIntVector(RoomAExtent->X, OutY, RoomA.Z);
+					PointRoomB = FIntVector(RoomB.X, OutY, RoomB.Z);
+					if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+					{
+						MakeXCorridor(PointRoomA, PointRoomB);
+						break;
+					}
+					else
+					{
+						LoopCount++;
+					}
+				}
+			}
+		}
+		else
+		{
+			// Check that rooms are not merged
+			if (RoomA.X - RoomBExtent->X > 1)
+			{
+				while (LoopCount <= MaxLoops)
+				{
+					// Corridor from B to A on X axis
+					int OutY = Stream.RandRange(FMath::Max(RoomA.Y, RoomB.Y), FMath::Min(RoomAExtent->Y, RoomBExtent->Y));
+					PointRoomA = FIntVector(RoomA.X, OutY, RoomA.Z);
+					PointRoomB = FIntVector(RoomBExtent->X, OutY, RoomB.Z);
+					if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+					{
+						MakeXCorridor(PointRoomB, PointRoomA);
+						break;
+					}
+					else
+					{
+						LoopCount++;
+					}
+				}
+			}
+		}
+	}
+	// Corner Corridors
+	else
+	{
+		// Room B is to the forward? Work in positive direction
+		if (RoomB.X > RoomA.X)
+		{
+			// Room B is to the right? Work in positive direction
+			if (RoomB.Y > RoomA.Y)
+			{
+				// Random choose hook direction
+				if (UKismetMathLibrary::RandomBoolFromStream(Stream))
+				{
+					// Hook up the right
+					while (LoopCount <= MaxLoops)
+					{
+						// Corridor from A to Corner (X), Corner to B (Y)
+						int OutX = Stream.RandRange(RoomB.X, RoomBExtent->X);
+						int OutY = Stream.RandRange(RoomA.Y, RoomAExtent->Y);
+						PointRoomA = FIntVector(RoomAExtent->X, OutY, RoomA.Z);
+						PointRoomB = FIntVector(OutX, RoomB.Y, RoomB.Z);
+						PointCorner = FIntVector(OutX, OutY, RoomB.Z);
+						if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+						{
+							CorridorTiles.Add(PointCorner);
+							MakeXCorridor(PointRoomA, PointCorner);
+							MakeYCorridor(PointCorner, PointRoomB);
+							break;
+						}
+						else
+						{
+							LoopCount++;
+						}
+					}
+				}
+				else
+				{
+					// Hook right then up
+					while (LoopCount <= MaxLoops)
+					{
+						// Corridor from A to Corner (Y), Corner to B (X)
+						int OutX = Stream.RandRange(RoomA.X, RoomAExtent->X);
+						int OutY = Stream.RandRange(RoomB.Y, RoomBExtent->Y);
+						PointRoomA = FIntVector(OutX, RoomAExtent->Y, RoomB.Z);
+						PointRoomB = FIntVector(RoomB.X, OutY, RoomA.Z);
+						PointCorner = FIntVector(OutX, OutY, RoomB.Z);
+						if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+						{
+							CorridorTiles.Add(PointCorner);
+							MakeXCorridor(PointCorner, PointRoomB);
+							MakeYCorridor(PointRoomA, PointCorner);
+							break;
+						}
+						else
+						{
+							LoopCount++;
+						}
+					}
+				}
+			}
+			else
+			{
+				// Random choose hook direction
+				if (UKismetMathLibrary::RandomBoolFromStream(Stream))
+				{
+					// Up then left
+					while (LoopCount <= MaxLoops)
+					{
+						// Corridor from A to Corner (X), B to Corner (Y)
+						int OutX = Stream.RandRange(RoomB.X, RoomBExtent->X);
+						int OutY = Stream.RandRange(RoomA.Y, RoomAExtent->Y);
+						PointRoomA = FIntVector(RoomAExtent->X, OutY, RoomA.Z);
+						PointRoomB = FIntVector(OutX, RoomBExtent->Y, RoomB.Z);
+						PointCorner = FIntVector(OutX, OutY, RoomB.Z);
+						if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+						{
+							CorridorTiles.Add(PointCorner);
+							MakeXCorridor(PointRoomA, PointCorner);
+							MakeYCorridor(PointRoomB, PointCorner);
+							break;
+						}
+						else
+						{
+							LoopCount++;
+						}
+					}
+				}
+				else
+				{
+					// Left then Up
+					while (LoopCount <= MaxLoops)
+					{
+						// Corridor from Corner to A (Y), Corner to B (X)
+						int OutX = Stream.RandRange(RoomA.X, RoomAExtent->X);
+						int OutY = Stream.RandRange(RoomB.Y, RoomBExtent->Y);
+						PointRoomA = FIntVector(OutX, RoomA.Y, RoomB.Z);
+						PointRoomB = FIntVector(RoomB.X, OutY, RoomA.Z);
+						PointCorner = FIntVector(OutX, OutY, RoomB.Z);
+						if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+						{
+							CorridorTiles.Add(PointCorner);
+							MakeXCorridor(PointCorner, PointRoomB);
+							MakeYCorridor(PointCorner, PointRoomA);
+							break;
+						}
+						else
+						{
+							LoopCount++;
+						}
+					}
+				}
+			}
+		}
+		// RoomB back (X)
+		else
+		{
+			// Room B is to the right? Work in positive direction
+			if (RoomB.Y > RoomA.Y)
+			{
+				// Random choose hook direction
+				if (UKismetMathLibrary::RandomBoolFromStream(Stream))
+				{
+					// Hook right then down
+					while (LoopCount <= MaxLoops)
+					{
+						// Corridor from A to Corner (Y), B to Corner (X)
+						int OutX = Stream.RandRange(RoomA.X, RoomAExtent->X);
+						int OutY = Stream.RandRange(RoomB.Y, RoomBExtent->Y);
+						PointRoomA = FIntVector(OutX, RoomAExtent->Y, RoomA.Z);
+						PointRoomB = FIntVector(RoomBExtent->X, OutY, RoomB.Z);
+						PointCorner = FIntVector(OutX, OutY, RoomB.Z);
+						if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+						{
+							CorridorTiles.Add(PointCorner);
+							MakeXCorridor(PointRoomB, PointCorner);
+							MakeYCorridor(PointRoomA, PointCorner);
+							break;
+						}
+						else
+						{
+							LoopCount++;
+						}
+					}
+				}
+				else
+				{
+					// Hook down then right
+					while (LoopCount <= MaxLoops)
+					{
+						// Corridor from Corner to A (X), Corner to B (Y)
+						int OutX = Stream.RandRange(RoomB.X, RoomBExtent->X);
+						int OutY = Stream.RandRange(RoomA.Y, RoomAExtent->Y);
+						PointRoomA = FIntVector(RoomA.X, OutY, RoomB.Z);
+						PointRoomB = FIntVector(OutX, RoomB.Y, RoomA.Z);
+						PointCorner = FIntVector(OutX, OutY, RoomB.Z);
+						if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+						{
+							CorridorTiles.Add(PointCorner);
+							MakeXCorridor(PointCorner, PointRoomA);
+							MakeYCorridor(PointCorner, PointRoomB);
+							break;
+						}
+						else
+						{
+							LoopCount++;
+						}
+					}
+				}
+			}
+			// Back Left
+			else
+			{
+				// Random choose hook direction
+				if (UKismetMathLibrary::RandomBoolFromStream(Stream))
+				{
+					// Left then down
+					while (LoopCount <= MaxLoops)
+					{
+						// Corridor from Corner to A (Y), B to Corner (X)
+						int OutX = Stream.RandRange(RoomA.X, RoomAExtent->X);
+						int OutY = Stream.RandRange(RoomB.Y, RoomBExtent->Y);
+						PointRoomA = FIntVector(OutX, RoomAExtent->Y, RoomB.Z);
+						PointRoomB = FIntVector(RoomBExtent->X, OutY, RoomA.Z);
+						PointCorner = FIntVector(OutX, OutY, RoomB.Z);
+						if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+						{
+							CorridorTiles.Add(PointCorner);
+							MakeXCorridor(PointRoomB, PointCorner);
+							MakeYCorridor(PointCorner, PointRoomA);
+							break;
+						}
+						else
+						{
+							LoopCount++;
+						}
+					}
+				}
+				else
+				{
+					// Down then left
+					while (LoopCount <= MaxLoops)
+					{
+						// Corridor from Corner to A (X), B to Corner (Y)
+						int OutX = Stream.RandRange(RoomB.X, RoomBExtent->X);
+						int OutY = Stream.RandRange(RoomA.Y, RoomAExtent->Y);
+						PointRoomA = FIntVector(RoomA.X, OutY, RoomA.Z);
+						PointRoomB = FIntVector(OutX, RoomBExtent->Y, RoomB.Z);
+						PointCorner = FIntVector(OutX, OutY, RoomB.Z);
+						if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+						{
+							CorridorTiles.Add(PointCorner);
+							MakeXCorridor(PointCorner, PointRoomA);
+							MakeYCorridor(PointRoomB, PointCorner);
+							break;
+						}
+						else
+						{
+							LoopCount++;
+						}
+					}
+				}
+			}
+
+		}
+	}
+}
+
+void ADungeonGenerator::MakeYCorridor(const FIntVector From, const FIntVector To)
+{
+	for (int32 i = 1; i < FMath::Abs(From.Y - To.Y); i++)
+	{
+		DrawDebugBox(GetWorld(), FVector(From.X, From.Y + i, From.Z), FVector(50, 50, 50), FColor::Red, true, -1.0f, 0U, 10);
+		//UE_LOG(LogTemp, Warning, TEXT("%d"), From.Y + i);
+		CorridorTiles.Add(FIntVector(From.X, From.Y + i, From.Z));
+	}
+}
+
+void ADungeonGenerator::MakeXCorridor(const FIntVector From, const FIntVector To)
+{
+	for (int32 i = 1; i < FMath::Abs(From.X - To.X); i++)
+	{
+		DrawDebugBox(GetWorld(), FVector(From.X + i, From.Y, From.Z), FVector(50, 50, 50), FColor::Red, true, -1.0f, 0U, 10);
+		//UE_LOG(LogTemp, Warning, TEXT("%d"), From.X + i);
+		CorridorTiles.Add(FIntVector(From.X + i, From.Y, From.Z));
+	}
+}
+
 
 
 //
