@@ -761,55 +761,12 @@ void ADungeonGenerator::MapCorridors(const FIntVector RoomA, const FIntVector Ro
 				if (UKismetMathLibrary::RandomBoolFromStream(Stream))
 				{
 					// Hook right then down
-					while (LoopCount <= MaxLoops)
-					{
-						// Corridor from A to Corner (Y), B to Corner (X)
-						int OutX = Stream.RandRange(RoomA.X, RoomAExtent->X);
-						int OutY = Stream.RandRange(RoomB.Y, RoomBExtent->Y);
-						PointRoomA = FIntVector(OutX, RoomAExtent->Y, RoomA.Z);
-						PointRoomB = FIntVector(RoomBExtent->X, OutY, RoomB.Z);
-						PointCorner = FIntVector(OutX, OutY, RoomB.Z);
-						DrawDebugBox(GetWorld(), FVector(PointRoomA.X, PointRoomA.Y, PointRoomA.Z) * Scale, FVector(50, 50, 50), FColor::Blue, true, -1.0f, 0U, 15);
-						if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
-						{
-							CorridorTiles.Add(PointCorner);
-							MakeXCorridor(PointRoomB, PointCorner);
-							MakeYCorridor(PointRoomA, PointCorner);
-							break;
-						}
-						else
-						{
-							LoopCount++;
-						}
-					}
+					RightDown(true, LoopCount, RoomA, RoomAExtent, RoomB, RoomBExtent, PointRoomA, PointRoomB, PointCorner);
 				}
 				else
 				{
 					// Hook down then right
-					while (LoopCount <= MaxLoops)
-					{
-						// Corridor from Corner to A (X), Corner to B (Y)
-						int OutX = Stream.RandRange(RoomB.X, RoomBExtent->X);
-						int OutY = Stream.RandRange(RoomA.Y, RoomAExtent->Y);
-						PointRoomA = FIntVector(RoomA.X, OutY, RoomB.Z);
-						PointRoomB = FIntVector(OutX, RoomB.Y, RoomA.Z);
-						PointCorner = FIntVector(OutX, OutY, RoomB.Z);
-						DrawDebugBox(GetWorld(), FVector(PointRoomA.X, PointRoomA.Y, PointRoomA.Z)* Scale, FVector(50, 50, 50), FColor::Blue, true, -1.0f, 0U, 15);
-						DrawDebugBox(GetWorld(), FVector(PointRoomB.X, PointRoomB.Y, PointRoomB.Z)* Scale, FVector(50, 50, 50), FColor::Green, true, -1.0f, 0U, 15);
-						DrawDebugBox(GetWorld(), FVector(PointCorner.X, PointCorner.Y, PointCorner.Z)* Scale, FVector(50, 50, 50), FColor::Purple, true, -1.0f, 0U, 15);
-						if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
-						{
-							CorridorTiles.Add(PointCorner);
-							MakeXCorridor(PointCorner, PointRoomA);
-							MakeYCorridor(PointCorner, PointRoomB);
-							break;
-						}
-						else
-						{
-							//LoopCount++;
-							UE_LOG(LogTemp, Warning, TEXT("Failure %d"), LoopCount++);
-						}
-					}
+					DownRight(true, LoopCount, RoomB, RoomBExtent, RoomA, RoomAExtent, PointRoomA, PointRoomB, PointCorner);
 				}
 			}
 			// Back Left
@@ -871,6 +828,102 @@ void ADungeonGenerator::MapCorridors(const FIntVector RoomA, const FIntVector Ro
 		}
 	}
 }
+
+#pragma region CornerCorridors
+// TODO: Refactor other directions
+// TODO: Refactor to single function? input direction and drawing of halls 
+
+void ADungeonGenerator::RightDown(bool FirstAttempt, int& LoopCount, const FIntVector& RoomA, FIntVector* RoomAExtent, const FIntVector& RoomB, FIntVector* RoomBExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner)
+{
+	bool complete = false;
+	while (LoopCount <= MaxLoops)
+	{
+		// Corridor from A to Corner (Y), B to Corner (X)
+		int OutX = Stream.RandRange(RoomA.X, RoomAExtent->X);
+		int OutY = Stream.RandRange(RoomB.Y, RoomBExtent->Y);
+		PointRoomA = FIntVector(OutX, RoomAExtent->Y, RoomA.Z);
+		PointRoomB = FIntVector(RoomBExtent->X, OutY, RoomB.Z);
+		PointCorner = FIntVector(OutX, OutY, RoomB.Z);
+		DrawDebugBox(GetWorld(), FVector(PointRoomA.X, PointRoomA.Y, PointRoomA.Z) * Scale, FVector(50, 50, 50), FColor::Blue, true, -1.0f, 0U, 15);
+		DrawDebugBox(GetWorld(), FVector(PointRoomB.X, PointRoomB.Y, PointRoomB.Z) * Scale, FVector(50, 50, 50), FColor::Green, true, -1.0f, 0U, 15);
+		DrawDebugBox(GetWorld(), FVector(PointCorner.X, PointCorner.Y, PointCorner.Z) * Scale, FVector(50, 50, 50), FColor::Purple, true, -1.0f, 0U, 15);
+		if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+		{
+			CorridorTiles.Add(PointCorner);
+			MakeXCorridor(PointRoomB, PointCorner);
+			MakeYCorridor(PointRoomA, PointCorner);
+			complete = true;
+			break;
+		}
+		else
+		{
+			//LoopCount++;
+			UE_LOG(LogTemp, Warning, TEXT("Failure %d"), LoopCount++);
+		}
+	}
+	if (!complete)
+	{
+		if (FirstAttempt)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Failure to build Corridor Right Down"));
+			UE_LOG(LogTemp, Warning, TEXT("Attempting Down Right"));
+			LoopCount = 0;
+			DownRight(false, LoopCount, RoomA, RoomAExtent, RoomB, RoomBExtent, PointRoomA, PointRoomB, PointCorner);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Failure to build Corridor Right Down"));
+			return;
+		}
+	}
+}
+
+void ADungeonGenerator::DownRight(bool FirstAttempt, int& LoopCount, const FIntVector& RoomB, FIntVector* RoomBExtent, const FIntVector& RoomA, FIntVector* RoomAExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner)
+{
+	bool complete = false;
+	while (LoopCount <= MaxLoops)
+	{
+		// Corridor from Corner to A (X), Corner to B (Y)
+		int OutX = Stream.RandRange(RoomB.X, RoomBExtent->X);
+		int OutY = Stream.RandRange(RoomA.Y, RoomAExtent->Y);
+		PointRoomA = FIntVector(RoomA.X, OutY, RoomB.Z);
+		PointRoomB = FIntVector(OutX, RoomB.Y, RoomA.Z);
+		PointCorner = FIntVector(OutX, OutY, RoomB.Z);
+		DrawDebugBox(GetWorld(), FVector(PointRoomA.X, PointRoomA.Y, PointRoomA.Z) * Scale, FVector(50, 50, 50), FColor::Blue, true, -1.0f, 0U, 15);
+		DrawDebugBox(GetWorld(), FVector(PointRoomB.X, PointRoomB.Y, PointRoomB.Z) * Scale, FVector(50, 50, 50), FColor::Green, true, -1.0f, 0U, 15);
+		DrawDebugBox(GetWorld(), FVector(PointCorner.X, PointCorner.Y, PointCorner.Z) * Scale, FVector(50, 50, 50), FColor::Purple, true, -1.0f, 0U, 15);
+		if (FloorTiles.Contains(PointRoomA) && FloorTiles.Contains(PointRoomB))
+		{
+			CorridorTiles.Add(PointCorner);
+			MakeXCorridor(PointCorner, PointRoomA);
+			MakeYCorridor(PointCorner, PointRoomB);
+			complete = true;
+			break;
+		}
+		else
+		{
+			//LoopCount++;
+			UE_LOG(LogTemp, Warning, TEXT("Failure %d"), LoopCount++);
+		}
+	}
+	if (!complete)
+	{
+		if (FirstAttempt)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Failure to build Corridor Down Right"));
+			UE_LOG(LogTemp, Warning, TEXT("Attempting Right Down"));
+			LoopCount = 0;
+			RightDown(false, LoopCount, RoomA, RoomAExtent, RoomB, RoomBExtent, PointRoomA, PointRoomB, PointCorner);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Failure to build Corridor Down Right"));
+			return;
+		}
+	}
+}
+
+#pragma endregion CornerCorridors
 
 void ADungeonGenerator::MakeYCorridor(const FIntVector From, const FIntVector To)
 {

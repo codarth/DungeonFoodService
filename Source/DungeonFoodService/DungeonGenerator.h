@@ -103,6 +103,8 @@ private:
 	// Create corridors between rooms
 	UFUNCTION()
 		void MapCorridors(const FIntVector RoomA, const FIntVector RoomB);
+	void RightDown(bool FirstAttempt, int& LoopCount, const FIntVector& RoomA, FIntVector* RoomAExtent, const FIntVector& RoomB, FIntVector* RoomBExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
+	void DownRight(bool FirstAttempt, int& LoopCount, const FIntVector& RoomB, FIntVector* RoomBExtent, const FIntVector& RoomA, FIntVector* RoomAExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
 	UFUNCTION()
 		void MakeYCorridor(const FIntVector From, const FIntVector To);
 	UFUNCTION()
