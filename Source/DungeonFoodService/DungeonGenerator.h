@@ -54,7 +54,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = EditerTools)
 		bool NewSeed;
 	UPROPERTY(EditAnywhere, Category = EditerTools)
-		int32 MaxLoops = 10;
+		int32 MaxLoops = 15;
 	UPROPERTY(EditAnywhere, Category = EditerTools)
 		float Scale = 200.f;
 
