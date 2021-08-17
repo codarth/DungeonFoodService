@@ -27,6 +27,8 @@ public:
 		class UInstancedStaticMeshComponent* InnerCornerMesh;
 	UPROPERTY(EditAnywhere, Category = Meshes)
 		class UInstancedStaticMeshComponent* OuterCornerMesh;
+	UPROPERTY(EditAnywhere, Category = Meshes)
+		class UInstancedStaticMeshComponent* DoorMesh;
 
 	UPROPERTY(EditAnywhere, Category = MapSettings)
 		int32 Seed = 100;
@@ -103,11 +105,24 @@ private:
 	// Create corridors between rooms
 	UFUNCTION()
 		void MapCorridors(const FIntVector RoomA, const FIntVector RoomB);
+
+	void UpRight(bool FirstAttempt, int& LoopCount, const FIntVector& RoomB, FIntVector* RoomBExtent, const FIntVector& RoomA, FIntVector* RoomAExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
+	void RightUp(bool FirstAttempt, int& LoopCount, const FIntVector& RoomA, FIntVector* RoomAExtent, const FIntVector& RoomB, FIntVector* RoomBExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
+	void UpLeft(bool FirstAttempt, int& LoopCount, const FIntVector& RoomB, FIntVector* RoomBExtent, const FIntVector& RoomA, FIntVector* RoomAExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
+	void LeftUp(bool FirstAttempt, int& LoopCount, const FIntVector& RoomA, FIntVector* RoomAExtent, const FIntVector& RoomB, FIntVector* RoomBExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
+	void DownLeft(bool FirstAttempt, int& LoopCount, const FIntVector& RoomB, FIntVector* RoomBExtent, const FIntVector& RoomA, FIntVector* RoomAExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
+	void LeftDown(bool FirstAttempt, int& LoopCount, const FIntVector& RoomA, FIntVector* RoomAExtent, const FIntVector& RoomB, FIntVector* RoomBExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
 	void RightDown(bool FirstAttempt, int& LoopCount, const FIntVector& RoomA, FIntVector* RoomAExtent, const FIntVector& RoomB, FIntVector* RoomBExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
 	void DownRight(bool FirstAttempt, int& LoopCount, const FIntVector& RoomB, FIntVector* RoomBExtent, const FIntVector& RoomA, FIntVector* RoomAExtent, FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
 	UFUNCTION()
 		void MakeYCorridor(const FIntVector From, const FIntVector To);
 	UFUNCTION()
 		void MakeXCorridor(const FIntVector From, const FIntVector To);
+
+
+
+	void DebugBoxes(FIntVector& PointRoomA, FIntVector& PointRoomB);
+	void DebugBoxesWCorners(FIntVector& PointRoomA, FIntVector& PointRoomB, FIntVector& PointCorner);
+
 };
  
